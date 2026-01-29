@@ -11,7 +11,8 @@ import {
 } from "./utils";
 
 // API URLs
-const ZIMAGE_BASE_API_URL = "https://luca115-z-image-turbo.hf.space";
+const ZIMAGE_TURBO_BASE_API_URL = "https://luca115-z-image-turbo.hf.space";
+const ZIMAGE_BASE_API_URL = "https://victor-z-image-mcp.hf.space";
 const QWEN_IMAGE_BASE_API_URL = "https://mcp-tools-qwen-image-fast.hf.space";
 const OVIS_IMAGE_BASE_API_URL = "https://aidc-ai-ovis-image-7b.hf.space";
 const FLUX_SCHNELL_BASE_API_URL =
@@ -22,6 +23,34 @@ const POLLINATIONS_API_URL = "https://text.pollinations.ai/openai";
 const WAN2_VIDEO_API_URL =
   "https://fradeck619-wan2-2-fp8da-aoti-faster.hf.space";
 const UPSCALER_BASE_API_URL = "https://tuan2308-upscaler.hf.space";
+
+// Z-Image Negative Prompt
+const ZIMAGE_NEGATIVE_PROMPT =
+  "worst quality, low quality, JPEG compression artifacts, ugly, incomplete, extra fingers, poorly drawn hands, poorly drawn face, deformed, disfigured, malformed limbs, fused fingers, cluttered background, three legs";
+
+/**
+ * 将宽高比转换为 Z-Image 的 resolution 格式
+ */
+function getZImageResolution(ar: string): string {
+  switch (ar) {
+    case "1:1":
+      return "1024x1024 ( 1:1 )";
+    case "4:3":
+      return "1152x864 ( 4:3 )";
+    case "3:4":
+      return "864x1152 ( 3:4 )";
+    case "3:2":
+      return "1248x832 ( 3:2 )";
+    case "2:3":
+      return "832x1248 ( 2:3 )";
+    case "16:9":
+      return "1280x720 ( 16:9 )";
+    case "9:16":
+      return "720x1280 ( 9:16 )";
+    default:
+      return "1024x1024 ( 1:1 )";
+  }
+}
 
 /**
  * Hugging Face Provider
@@ -39,6 +68,16 @@ export class HuggingFaceProvider extends BaseProvider {
 
   getModelConfigs(): Record<string, { apiId: string; config: ModelConfig }> {
     return {
+      "z-image": {
+        apiId: "z-image",
+        config: {
+          id: "huggingface/z-image",
+          name: "Z-Image (Hugging Face)",
+          type: ["text2image"],
+          steps: { range: [1, 100], default: 30 },
+          guidance: { range: [1, 20], default: 4 },
+        },
+      },
       "z-image-turbo": {
         apiId: "z-image-turbo",
         config: {
@@ -159,7 +198,22 @@ export class HuggingFaceProvider extends BaseProvider {
       let data: any[];
       let endpoint: string;
 
-      if (modelId === "flux-1-schnell") {
+      if (modelId === "z-image") {
+        // 新的 Z-Image 模型
+        apiBaseUrl = ZIMAGE_BASE_API_URL;
+        const resolution = getZImageResolution(ar || "1:1");
+        data = [
+          prompt,
+          ZIMAGE_NEGATIVE_PROMPT,
+          resolution,
+          finalSeed,
+          steps || 30,
+          guidance || 4,
+          false, // CFG Normalization
+          false, // Random Seed
+        ];
+        endpoint = "generate";
+      } else if (modelId === "flux-1-schnell") {
         apiBaseUrl = FLUX_SCHNELL_BASE_API_URL;
         data = [prompt, finalSeed, false, width, height, steps || 4];
         endpoint = "infer";
@@ -180,7 +234,7 @@ export class HuggingFaceProvider extends BaseProvider {
         endpoint = "generate";
       } else {
         // z-image-turbo
-        apiBaseUrl = ZIMAGE_BASE_API_URL;
+        apiBaseUrl = ZIMAGE_TURBO_BASE_API_URL;
         data = [prompt, height, width, steps || 9, finalSeed, false];
         endpoint = "generate_image";
       }
@@ -199,13 +253,14 @@ export class HuggingFaceProvider extends BaseProvider {
       const queueResult: any = await queue.json();
       const response = await fetch(
         `${apiBaseUrl}/gradio_api/call/${endpoint}/${queueResult.event_id}`,
-        { headers }
+        { headers },
       );
       const result = await response.text();
       const eventData = extractCompleteEventData(result);
 
       if (!eventData) throw new Error("Invalid response from Hugging Face");
 
+      // 其他模型的标准响应格式
       return {
         url: eventData[0].url,
         width,
@@ -244,7 +299,7 @@ export class HuggingFaceProvider extends BaseProvider {
           const path = await uploadToGradio(
             QWEN_IMAGE_EDIT_BASE_API_URL,
             blob,
-            token
+            token,
           );
           return { image: { path, meta: { _type: "gradio.FileData" } } };
         }
@@ -276,7 +331,7 @@ export class HuggingFaceProvider extends BaseProvider {
                 true,
               ],
             }),
-          }
+          },
         );
 
         const queueResult: any = await queue.json();
@@ -284,7 +339,7 @@ export class HuggingFaceProvider extends BaseProvider {
           QWEN_IMAGE_EDIT_BASE_API_URL +
             "/gradio_api/call/infer/" +
             queueResult.event_id,
-          { headers }
+          { headers },
         );
         const result = await response.text();
         const eventData = extractCompleteEventData(result);
@@ -375,7 +430,7 @@ export class HuggingFaceProvider extends BaseProvider {
                   false,
                 ],
               }),
-            }
+            },
           );
 
           const { event_id: taskId }: any = await queue.json();
@@ -389,7 +444,7 @@ export class HuggingFaceProvider extends BaseProvider {
               token,
               createdAt: new Date().toISOString(),
             }),
-            { expirationTtl: 86400 }
+            { expirationTtl: 86400 },
           );
 
           return { taskId, predict: 60 };
@@ -414,7 +469,7 @@ export class HuggingFaceProvider extends BaseProvider {
     try {
       const videoResponse = await fetch(
         WAN2_VIDEO_API_URL + "/gradio_api/call/generate_video/" + taskId,
-        { headers }
+        { headers },
       );
       const text = await videoResponse.text();
       const eventData = extractCompleteEventData(text);
@@ -431,7 +486,7 @@ export class HuggingFaceProvider extends BaseProvider {
             id: taskId,
             provider: "huggingface",
             completedAt: new Date().toISOString(),
-          })
+          }),
         );
 
         return { status: "success", url: videoUrl };
@@ -445,7 +500,7 @@ export class HuggingFaceProvider extends BaseProvider {
           provider: "huggingface",
           error: "Video generation failed",
           failedAt: new Date().toISOString(),
-        })
+        }),
       );
 
       await markTokenExhausted("huggingface", token, env);
@@ -475,7 +530,7 @@ export class HuggingFaceProvider extends BaseProvider {
       const path = await uploadToGradio(
         QWEN_IMAGE_EDIT_BASE_API_URL,
         imageBlob,
-        token
+        token,
       );
 
       const queue = await fetch(
@@ -495,7 +550,7 @@ export class HuggingFaceProvider extends BaseProvider {
               4,
             ],
           }),
-        }
+        },
       );
 
       const queueResult: any = await queue.json();
@@ -503,7 +558,7 @@ export class HuggingFaceProvider extends BaseProvider {
         UPSCALER_BASE_API_URL +
           "/gradio_api/call/realesrgan/" +
           queueResult.event_id,
-        { headers }
+        { headers },
       );
       const result = await response.text();
       const eventData = extractCompleteEventData(result);

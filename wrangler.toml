@@ -33,11 +33,19 @@ NODE_ENV = "production"
 
 # 启用日志
 [observability]
-[observability.logs]
 enabled = false
 head_sampling_rate = 1
-invocation_logs = true
+
+[observability.logs]
+enabled = true
+head_sampling_rate = 1
 persist = true
+invocation_logs = true
+
+[observability.traces]
+enabled = false
+persist = true
+head_sampling_rate = 1
 
 # 敏感信息请使用 wrangler secret 命令设置，不要直接写在这里
 # 示例：
